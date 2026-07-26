@@ -1,16 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
-const WHEEL_ORDER = [
-  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23,
-  10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3,
-  26,
-];
-
-const RED_NUMBERS = new Set([
-  1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
-]);
+import {
+  RED_NUMBERS,
+  WHEEL_ORDER,
+  numberColor,
+  rotationForPocket,
+  selectWinningPocket,
+  type WinningPocket,
+} from "./roulette";
 
 const QUESTIONS = [
   "Where will the ball land? Place your bets.",
@@ -42,11 +40,6 @@ const defaultSettings: Settings = {
   bankroll: 5000,
   tableLimit: 1000,
   chipSet: "classic",
-};
-
-const numberColor = (number: number) => {
-  if (number === 0) return "green";
-  return RED_NUMBERS.has(number) ? "red" : "black";
 };
 
 const formatMoney = (amount: number) =>
@@ -180,7 +173,7 @@ function BetAmount({ amount }: { amount?: number }) {
   return <span className="bet-chip" aria-label={`${formatMoney(amount)} bet`}>{amount >= 1000 ? `${amount / 1000}K` : amount}</span>;
 }
 
-function RouletteWheel({ result, rotation, spinning }: { result: number | null; rotation: number; spinning: boolean }) {
+function RouletteWheel({ winningPocket, rotation, spinning }: { winningPocket: WinningPocket | null; rotation: number; spinning: boolean }) {
   const gradient = useMemo(() => {
     const slice = 360 / WHEEL_ORDER.length;
     return `conic-gradient(from -${slice / 2}deg, ${WHEEL_ORDER.map((number, index) => {
@@ -199,7 +192,7 @@ function RouletteWheel({ result, rotation, spinning }: { result: number | null; 
           <div className="roulette-bowl"><div className="roulette-track"><span className="roulette-ball" /></div></div><div className="roulette-hub"><i /><strong>G</strong><small>ROULETTE</small></div>
         </div></div>
       </div>
-      <div className="wheel-result" aria-live="polite">{result === null ? <><span className="result-placeholder">—</span><div><small>Last result</small><b>Waiting for spin</b></div></> : <><span className={`result-number is-${numberColor(result)}`}>{result}</span><div><small>Winning number</small><b>{result === 0 ? "Zero" : `${numberColor(result)} · ${result % 2 ? "Odd" : "Even"}`}</b></div></>}</div>
+      <div className="wheel-result" aria-live="polite">{winningPocket === null ? <><span className="result-placeholder">—</span><div><small>Last result</small><b>Waiting for spin</b></div></> : <><span className={`result-number is-${winningPocket.color}`}>{winningPocket.number}</span><div><small>Winning number</small><b>{winningPocket.number === 0 ? "Zero" : `${winningPocket.color} · ${winningPocket.number % 2 ? "Odd" : "Even"}`}</b></div></>}</div>
     </div>
   );
 }
@@ -228,7 +221,7 @@ function Game({ settings, onSettings, onMenu, onToggleSound }: { settings: Setti
   const [bets, setBets] = useState<Bets>({});
   const [state, setState] = useState<RoundState>("betting");
   const [seconds, setSeconds] = useState(BETTING_SECONDS);
-  const [result, setResult] = useState<number | null>(null);
+  const [winningPocket, setWinningPocket] = useState<WinningPocket | null>(null);
   const [rotation, setRotation] = useState(0);
   const [message, setMessage] = useState("Place your bets");
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -258,20 +251,21 @@ function Game({ settings, onSettings, onMenu, onToggleSound }: { settings: Setti
 
   useEffect(() => { announce(question); return () => { if (typeof window !== "undefined") window.speechSynthesis?.cancel(); }; }, [announce, question]);
 
-  const newRound = useCallback(() => { setBets({}); setResult(null); setState("betting"); setSeconds(BETTING_SECONDS); setMessage("Place your bets"); setQuestionIndex((index) => index + 1); spinningRef.current = false; }, []);
+  const newRound = useCallback(() => { setBets({}); setWinningPocket(null); setState("betting"); setSeconds(BETTING_SECONDS); setMessage("Place your bets"); setQuestionIndex((index) => index + 1); spinningRef.current = false; }, []);
 
   const spin = useCallback(() => {
     if (spinningRef.current || state !== "betting" || totalBet <= 0) { if (totalBet <= 0) { setMessage("Place at least one bet"); tone(190, 0.18, "square", 0.025); } return; }
     spinningRef.current = true; setState("spinning"); setView("wheel"); setMessage("No more bets"); announce("No more bets. The wheel is spinning.");
-    const winningNumber = WHEEL_ORDER[Math.floor(Math.random() * WHEEL_ORDER.length)]; const pocketIndex = WHEEL_ORDER.indexOf(winningNumber); setRotation(rotation + 1440 + (360 - pocketIndex * (360 / 37)));
+    const pocket = selectWinningPocket();
+    setRotation((currentRotation) => rotationForPocket(currentRotation, pocket));
     [0, 260, 540, 860, 1220, 1640, 2100, 2650, 3200].forEach((delay, index) => { window.setTimeout(() => tone(740 - index * 46, 0.045, "square", 0.025), delay); });
     window.setTimeout(() => {
-      let winnings = 0; Object.entries(bets).forEach(([zone, amount]) => { if (betWins(zone, winningNumber)) winnings += amount * payoutMultiplier(zone); });
-      setBankroll((amount) => amount + winnings); setResult(winningNumber); setHistory((items) => [winningNumber, ...items].slice(0, 7)); setState("result"); setMessage(winnings > 0 ? `You won ${formatMoney(winnings)}` : `${winningNumber} wins · Better luck next spin`);
+      let winnings = 0; Object.entries(bets).forEach(([zone, amount]) => { if (betWins(zone, pocket.number)) winnings += amount * payoutMultiplier(zone); });
+      setBankroll((amount) => amount + winnings); setWinningPocket(pocket); setHistory((items) => [pocket.number, ...items].slice(0, 7)); setState("result"); setMessage(winnings > 0 ? `You won ${formatMoney(winnings)}` : `${pocket.number} wins · Better luck next spin`);
       if (winnings > 0) { tone(523, 0.18, "sine", 0.06); window.setTimeout(() => tone(659, 0.22, "sine", 0.055), 150); window.setTimeout(() => tone(784, 0.35, "sine", 0.05), 320); } else tone(156, 0.38, "triangle", 0.035);
-      announce(`${winningNumber}, ${numberColor(winningNumber)}. ${winnings > 0 ? `You won ${formatMoney(winnings)}.` : "The house wins this round."}`);
+      announce(`${pocket.number}, ${pocket.color}. ${winnings > 0 ? `You won ${formatMoney(winnings)}.` : "The house wins this round."}`);
     }, 4200);
-  }, [announce, bets, rotation, state, tone, totalBet]);
+  }, [announce, bets, state, tone, totalBet]);
 
   useEffect(() => {
     if (state !== "betting") return;
@@ -297,7 +291,7 @@ function Game({ settings, onSettings, onMenu, onToggleSound }: { settings: Setti
       </header>
       <section className="dealer-question" aria-live="polite" data-testid="dealer-question"><div className="dealer-avatar"><span>♛</span><i /></div><div className="question-copy"><small>Live dealer asks</small><p>“{question}”</p></div><div className={`round-timer ${seconds <= 5 ? "is-urgent" : ""}`}><small>{state === "betting" ? "Bets close in" : state === "spinning" ? "Wheel status" : "Round complete"}</small><b>{state === "betting" ? `0:${seconds.toString().padStart(2, "0")}` : state === "spinning" ? "SPINNING" : "RESULT"}</b></div></section>
       <nav className="mobile-view-switch" aria-label="Choose game view"><button className={view === "wheel" ? "is-active" : ""} onClick={() => setView("wheel")} data-testid="show-wheel">Wheel</button><button className={view === "board" ? "is-active" : ""} onClick={() => setView("board")} data-testid="show-board">Betting board</button></nav>
-      <div className={`game-area view-${view}`}><RouletteWheel result={result} rotation={rotation} spinning={state === "spinning"} /><BettingBoard bets={bets} result={result} disabled={state !== "betting"} onBet={placeBet} /></div>
+      <div className={`game-area view-${view}`}><RouletteWheel winningPocket={winningPocket} rotation={rotation} spinning={state === "spinning"} /><BettingBoard bets={bets} result={winningPocket?.number ?? null} disabled={state !== "betting"} onBet={placeBet} /></div>
       <footer className="bet-console" data-testid="chip-tray">
         <div className="console-message"><span className={`status-dot is-${state}`} /><div><small>Dealer</small><b>{message}</b></div></div>
         <div className="chip-rack" aria-label="Choose chip value"><small>Choose chip</small><div>{chips.map((chip) => <button key={chip} onClick={() => { setSelectedChip(chip); tone(360, 0.045, "triangle", 0.025); }} aria-label={`Select ${formatMoney(chip)} chip`} aria-pressed={selectedChip === chip}><Chip value={chip} selected={selectedChip === chip} /></button>)}</div></div>
