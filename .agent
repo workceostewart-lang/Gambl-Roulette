@@ -1,0 +1,22 @@
+# Gambl Roulette Agent Guide
+
+## Product
+Gambl Roulette is a FantomZone browser game based on `roulette-game-prd.md`.
+
+## Non-negotiables
+- Preserve the menu-first flow and premium blue, green, gold, and red casino palette.
+- Keep the European single-zero wheel, betting board, live dealer question, and chip controls accessible.
+- Desktop and wide landscape show the wheel and table together.
+- Narrow mobile uses a Wheel / Betting Board switch; the chip rack and spin controls remain visible in both views.
+- Primary controls work with touch, mouse, and keyboard.
+- Preserve user-configurable sound, bankroll, table limit, and chip rack preferences.
+
+## Quality checks
+- Run `npm run build` and `npm test` before release.
+- Test menu, rules, settings, chip placement, clear, spin, payout, and next-round flows.
+- Verify 390×844 portrait and 844×390 landscape viewports with no clipped wheel, board, or chip tray.
+- Keep the production build compatible with Cloudflare Workers and `.openai/hosting.json`.
+
+## Publishing
+- GitHub source: `git@github.com:workceostewart-lang/Gambl-Roulette.git`
+- Product domain: `gambl-roulette.fantomzone.app`
